@@ -1,0 +1,96 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // OAuth tokens
+  googleAccessToken       String?
+  googleRefreshToken      String?
+  googleTokenExpiry       DateTime?
+  hubspotAccessToken      String?
+  hubspotRefreshToken     String?
+  hubspotTokenExpiry      DateTime?
+
+  // Relations
+  messages      Message[]
+  tasks         Task[]
+  instructions  Instruction[]
+  embeddings    Embedding[]
+
+  @@map("users")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String   // 'user' | 'assistant' | 'system'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("messages")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // 'meeting_scheduling', 'email_followup', etc.
+  status      String   // 'pending', 'in_progress', 'completed', 'failed'
+  description String   @db.Text
+  data        Json?    // Task-specific data
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("tasks")
+}
+
+model Instruction {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String   @db.Text
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@map("instructions")
+}
+
+model Embedding {
+  id         String                  @id @default(cuid())
+  userId     String
+  source     String                  // 'gmail', 'hubspot', etc.
+  sourceId   String                  // External ID from source system
+  content    String                  @db.Text
+  metadata   Json?
+  embedding  Unsupported("vector")?
+  createdAt  DateTime                @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceId])
+  @@index([userId, source])
+  @@map("embeddings")
+}
+
