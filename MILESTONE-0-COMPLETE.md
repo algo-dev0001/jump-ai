@@ -1,4 +1,7 @@
-# ✅ Milestone 0: Repo & Base Setup - COMPLETE
+# ✅ Milestone 0 & 1 - COMPLETE
+
+## Milestone 0: Repo & Base Setup ✓
+## Milestone 1: Google OAuth ✓
 
 ## What We Built
 
@@ -184,16 +187,49 @@ npm run db:generate      # Regenerate Prisma Client
 
 See `QUICKSTART.md` for a 5-minute setup guide.
 
+## Milestone 1 Implementation
+
+### Backend OAuth Routes (`backend/src/routes/auth.ts`)
+- `GET /auth/google` - Initiates Google OAuth flow
+- `GET /auth/google/callback` - Handles OAuth callback
+- `GET /auth/me` - Returns current user info (protected)
+- `POST /auth/logout` - Clears session
+- `POST /auth/google/refresh` - Manually refresh tokens
+
+### Google OAuth Service (`backend/src/services/google-oauth.ts`)
+- Scopes: Gmail (read/write), Calendar (read/write)
+- Access token + refresh token handling
+- User info retrieval
+
+### Token Manager (`backend/src/services/token-manager.ts`)
+- Automatic token refresh when expired
+- 5-minute expiry buffer
+- Database storage
+
+### Auth Middleware (`backend/src/middleware/auth.ts`)
+- JWT-based authentication
+- `requireAuth` - protects routes
+- `optionalAuth` - optional authentication
+
+### Frontend Auth (`frontend/src/lib/auth.tsx`)
+- React Context for auth state
+- `useAuth` hook
+- Auto-redirect based on auth state
+
+### Protected Routes
+- Dashboard requires authentication
+- Login redirects authenticated users
+- OAuth callback handles token storage
+
 ## Next Steps
 
-Ready for **Milestone 1: OAuth & Auth**
+Ready for **Milestone 2: Agent & Tool Calling**
 
 This will add:
-- Google OAuth flow (Gmail + Calendar permissions)
-- HubSpot OAuth flow (CRM permissions)
-- Token storage and refresh
-- Protected routes
-- Session management
+- OpenAI GPT-4 integration
+- Tool calling framework
+- Chat interface
+- Basic tools (send_email, etc.)
 
 ## Verification Checklist
 
