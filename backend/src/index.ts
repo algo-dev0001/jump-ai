@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { config } from './config';
 import authRoutes from './routes/auth';
 import chatRoutes from './routes/chat';
+import { startEmailPoller, stopEmailPoller } from './jobs';
 
 dotenv.config();
 
@@ -53,11 +54,15 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
 const server = app.listen(PORT, () => {
   console.log(`🚀 Backend server running on http://localhost:${PORT}`);
   console.log(`📝 Google OAuth callback: ${config.GOOGLE_REDIRECT_URI}`);
+  
+  // Start background jobs
+  startEmailPoller();
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  stopEmailPoller();
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);

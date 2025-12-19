@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { getAuthUrl, getTokensFromCode, getUserInfo } from '../services/google-oauth';
 import { storeGoogleTokens, getValidGoogleTokens } from '../services/token-manager';
 import { generateToken, requireAuth } from '../middleware/auth';
+import { pollUserNow } from '../jobs';
 import { config } from '../config';
 
 const router = Router();
@@ -60,6 +61,11 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       tokens.refresh_token,
       tokens.expiry_date
     );
+
+    // Trigger immediate email sync (async, don't wait)
+    pollUserNow(user.id).catch((err) => {
+      console.error('Initial email sync failed:', err);
+    });
 
     // Generate JWT for session
     const jwtToken = generateToken({

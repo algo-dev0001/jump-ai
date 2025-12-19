@@ -24,11 +24,16 @@ model User {
   hubspotRefreshToken     String?
   hubspotTokenExpiry      DateTime?
 
+  // Gmail sync state
+  gmailHistoryId          String?
+  gmailLastSync           DateTime?
+
   // Relations
   messages      Message[]
   tasks         Task[]
   instructions  Instruction[]
   embeddings    Embedding[]
+  emailCache    EmailCache[]
 
   @@map("users")
 }
@@ -92,5 +97,30 @@ model Embedding {
   @@unique([source, sourceId])
   @@index([userId, source])
   @@map("embeddings")
+}
+
+model EmailCache {
+  id        String   @id // Gmail message ID
+  threadId  String
+  userId    String
+  from      String
+  fromName  String?
+  to        String[] // Array of email addresses
+  cc        String[] // Array of CC addresses
+  subject   String
+  snippet   String   @db.Text
+  body      String   @db.Text
+  date      DateTime
+  isRead    Boolean  @default(false)
+  labels    String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([userId, threadId])
+  @@index([userId, from])
+  @@map("email_cache")
 }
 
