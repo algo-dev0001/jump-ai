@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
-import { generateChatResponse, generateChatResponseStream, ChatMessage, SYSTEM_PROMPT } from '../services/openai';
+import { runAgent, runAgentStream, AgentMessage } from '../agent';
 import { z } from 'zod';
 
 const router = Router();
@@ -19,7 +19,7 @@ router.get('/history', requireAuth, async (req: Request, res: Response) => {
     const messages = await prisma.message.findMany({
       where: { userId: req.user!.id },
       orderBy: { createdAt: 'asc' },
-      take: 100, // Limit to last 100 messages
+      take: 100,
     });
 
     res.json({ messages });
@@ -43,7 +43,7 @@ router.delete('/history', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Send a chat message
+// Send a chat message (with tool calling)
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate request
@@ -68,16 +68,19 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const recentMessages = await prisma.message.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      take: 20, // Last 20 messages for context
+      take: 20,
     });
 
-    // Build messages array for OpenAI (reverse to chronological order)
-    const chatMessages: ChatMessage[] = recentMessages
+    // Build messages array for agent
+    const agentMessages: AgentMessage[] = recentMessages
       .reverse()
       .map((msg) => ({
         role: msg.role as 'user' | 'assistant' | 'system',
         content: msg.content,
       }));
+
+    // Tool execution context
+    const toolContext = { userId };
 
     if (stream) {
       // Streaming response
@@ -86,39 +89,66 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       res.setHeader('Connection', 'keep-alive');
 
       let fullResponse = '';
+      const toolCallsExecuted: Array<{ name: string; args: unknown; result: unknown }> = [];
 
       try {
-        for await (const chunk of generateChatResponseStream(chatMessages)) {
-          fullResponse += chunk;
-          res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+        for await (const event of runAgentStream(agentMessages, toolContext)) {
+          switch (event.type) {
+            case 'thinking':
+              res.write(`data: ${JSON.stringify({ type: 'thinking', iteration: (event.data as { iteration: number }).iteration })}\n\n`);
+              break;
+              
+            case 'tool_call':
+              res.write(`data: ${JSON.stringify({ type: 'tool_call', ...event.data as object })}\n\n`);
+              break;
+              
+            case 'tool_result':
+              const resultData = event.data as { name: string; result: { data?: unknown } };
+              toolCallsExecuted.push({
+                name: resultData.name,
+                args: {},
+                result: resultData.result,
+              });
+              res.write(`data: ${JSON.stringify({ type: 'tool_result', ...resultData })}\n\n`);
+              break;
+              
+            case 'content':
+              fullResponse = event.data as string;
+              res.write(`data: ${JSON.stringify({ type: 'content', content: fullResponse })}\n\n`);
+              break;
+              
+            case 'done':
+              // Save assistant response to database
+              if (fullResponse) {
+                await prisma.message.create({
+                  data: {
+                    userId,
+                    role: 'assistant',
+                    content: fullResponse,
+                  },
+                });
+              }
+              res.write(`data: ${JSON.stringify({ type: 'done', toolCalls: toolCallsExecuted })}\n\n`);
+              break;
+          }
         }
-
-        // Save assistant response to database
-        await prisma.message.create({
-          data: {
-            userId,
-            role: 'assistant',
-            content: fullResponse,
-          },
-        });
-
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        
         res.end();
       } catch (error) {
         console.error('Stream error:', error);
-        res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Stream error' })}\n\n`);
         res.end();
       }
     } else {
-      // Non-streaming response
-      const response = await generateChatResponse(chatMessages);
+      // Non-streaming response with agent loop
+      const result = await runAgent(agentMessages, toolContext);
 
       // Save assistant response to database
       const assistantMessage = await prisma.message.create({
         data: {
           userId,
           role: 'assistant',
-          content: response,
+          content: result.response,
         },
       });
 
@@ -126,9 +156,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         message: {
           id: assistantMessage.id,
           role: 'assistant',
-          content: response,
+          content: result.response,
           createdAt: assistantMessage.createdAt,
         },
+        toolCalls: result.toolCalls,
+        usage: result.usage,
       });
     }
   } catch (error) {
@@ -138,4 +170,3 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 export default router;
-

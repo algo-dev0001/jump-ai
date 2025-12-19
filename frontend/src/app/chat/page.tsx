@@ -4,13 +4,18 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { ChatMessage, ChatInput, ChatHeader } from '@/components/chat';
+import { ChatMessage, ChatInput, ChatHeader, ToolCallDisplay } from '@/components/chat';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;
+}
+
+interface ActiveToolCall {
+  name: string;
+  status: 'calling' | 'complete' | 'error';
 }
 
 export default function ChatPage() {
@@ -21,6 +26,7 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [activeToolCalls, setActiveToolCalls] = useState<ActiveToolCall[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom
@@ -30,7 +36,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent, scrollToBottom]);
+  }, [messages, streamingContent, activeToolCalls, scrollToBottom]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -60,7 +66,7 @@ export default function ChatPage() {
     }
   }, [isAuthenticated]);
 
-  // Send message with streaming
+  // Send message with streaming and tool call support
   const handleSend = async (content: string) => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -75,9 +81,9 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsSending(true);
     setStreamingContent('');
+    setActiveToolCalls([]);
 
     try {
-      // Use streaming
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat`, {
         method: 'POST',
         headers: {
@@ -108,23 +114,59 @@ export default function ChatPage() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                if (data.content) {
-                  fullContent += data.content;
-                  setStreamingContent(fullContent);
+                
+                switch (data.type) {
+                  case 'thinking':
+                    // Agent is thinking/processing
+                    break;
+                    
+                  case 'tool_call':
+                    // Tool is being called
+                    setActiveToolCalls((prev) => [
+                      ...prev,
+                      { name: data.name, status: 'calling' },
+                    ]);
+                    break;
+                    
+                  case 'tool_result':
+                    // Tool finished
+                    setActiveToolCalls((prev) =>
+                      prev.map((tc) =>
+                        tc.name === data.name
+                          ? { ...tc, status: data.result?.success ? 'complete' : 'error' }
+                          : tc
+                      )
+                    );
+                    break;
+                    
+                  case 'content':
+                    // Final response content
+                    fullContent = data.content;
+                    setStreamingContent(fullContent);
+                    break;
+                    
+                  case 'done':
+                    // Finished - add assistant message
+                    if (fullContent) {
+                      const assistantMessage: Message = {
+                        id: `msg-${Date.now()}`,
+                        role: 'assistant',
+                        content: fullContent,
+                        createdAt: new Date().toISOString(),
+                      };
+                      setMessages((prev) => [...prev, assistantMessage]);
+                    }
+                    setStreamingContent('');
+                    setActiveToolCalls([]);
+                    break;
+                    
+                  case 'error':
+                    throw new Error(data.error);
                 }
-                if (data.done) {
-                  // Add assistant message
-                  const assistantMessage: Message = {
-                    id: `msg-${Date.now()}`,
-                    role: 'assistant',
-                    content: fullContent,
-                    createdAt: new Date().toISOString(),
-                  };
-                  setMessages((prev) => [...prev, assistantMessage]);
-                  setStreamingContent('');
-                }
-              } catch {
+              } catch (parseError) {
                 // Ignore parse errors for incomplete JSON
+                if (parseError instanceof SyntaxError) continue;
+                throw parseError;
               }
             }
           }
@@ -132,7 +174,6 @@ export default function ChatPage() {
       }
     } catch (error) {
       console.error('Send message error:', error);
-      // Add error message
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: 'system',
@@ -140,6 +181,7 @@ export default function ChatPage() {
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMessage]);
+      setActiveToolCalls([]);
     } finally {
       setIsSending(false);
     }
@@ -184,7 +226,7 @@ export default function ChatPage() {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto py-6 px-4">
-          {messages.length === 0 && !streamingContent ? (
+          {messages.length === 0 && !streamingContent && activeToolCalls.length === 0 ? (
             <div className="text-center py-20">
               <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg
@@ -205,14 +247,15 @@ export default function ChatPage() {
                 Start a conversation
               </h2>
               <p className="text-gray-600 max-w-md mx-auto">
-                Ask me about your clients, schedule meetings, draft emails, or get help
-                managing your financial advisory practice.
+                I can help you send emails, schedule meetings, search your CRM, and manage
+                tasks. Just ask!
               </p>
               <div className="mt-6 flex flex-wrap gap-2 justify-center">
                 {[
-                  'Help me draft an email to a client',
-                  'What meetings do I have this week?',
-                  'Summarize my recent client communications',
+                  'Send an email to John about our meeting',
+                  'Find available time slots for next week',
+                  'Search for client information',
+                  'Create a follow-up task',
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
@@ -234,6 +277,21 @@ export default function ChatPage() {
                   content={message.content}
                 />
               ))}
+              
+              {/* Active tool calls */}
+              {activeToolCalls.length > 0 && (
+                <div className="mb-4">
+                  {activeToolCalls.map((tc, idx) => (
+                    <ToolCallDisplay
+                      key={`${tc.name}-${idx}`}
+                      name={tc.name}
+                      status={tc.status}
+                    />
+                  ))}
+                </div>
+              )}
+              
+              {/* Streaming content */}
               {streamingContent && (
                 <ChatMessage
                   role="assistant"
@@ -251,9 +309,8 @@ export default function ChatPage() {
       <ChatInput
         onSend={handleSend}
         disabled={isSending}
-        placeholder={isSending ? 'AI is thinking...' : 'Ask me anything...'}
+        placeholder={isSending ? 'AI is working...' : 'Ask me anything...'}
       />
     </div>
   );
 }
-
