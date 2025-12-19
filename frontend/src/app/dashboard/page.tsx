@@ -109,16 +109,27 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <span className="text-orange-600 font-bold text-sm">HS</span>
+                    <svg className="w-6 h-6 text-orange-600" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.984 2.21 2.21 0 00-4.42 0c0 .873.51 1.627 1.246 1.983v2.848a5.233 5.233 0 00-2.771 1.398l-7.199-5.598a2.665 2.665 0 00.432-1.44 2.69 2.69 0 10-2.69 2.691c.474 0 .918-.125 1.305-.34l7.13 5.545a5.26 5.26 0 00-.387 1.98 5.266 5.266 0 005.266 5.266 5.266 5.266 0 005.266-5.266 5.267 5.267 0 00-4.445-5.197zm-.916 8.08a2.882 2.882 0 110-5.764 2.882 2.882 0 010 5.764z"/>
+                    </svg>
                   </div>
                   <div>
                     <p className="font-medium">HubSpot</p>
                     <p className="text-sm text-gray-500">CRM</p>
                   </div>
                 </div>
-                <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded">
-                  Coming soon
-                </span>
+                {connections?.hubspot.connected ? (
+                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">
+                    Connected
+                  </span>
+                ) : (
+                  <a
+                    href={`${process.env.NEXT_PUBLIC_API_URL}/auth/hubspot`}
+                    className="px-3 py-1.5 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition"
+                  >
+                    Connect
+                  </a>
+                )}
               </div>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { getAuthUrl, getTokensFromCode, getUserInfo } from '../services/google-oauth';
 import { storeGoogleTokens, getValidGoogleTokens } from '../services/token-manager';
+import { getHubSpotAuthUrl, getHubSpotTokens } from '../services/hubspot-oauth';
 import { generateToken, requireAuth } from '../middleware/auth';
 import { pollUserNow } from '../jobs';
 import { config } from '../config';
@@ -162,6 +163,89 @@ router.post('/google/refresh', requireAuth, async (req: Request, res: Response) 
   } catch (error) {
     console.error('Token refresh error:', error);
     res.status(500).json({ error: 'Failed to refresh tokens' });
+  }
+});
+
+// ============ HubSpot OAuth ============
+
+// Initiate HubSpot OAuth flow
+router.get('/hubspot', requireAuth, (req: Request, res: Response) => {
+  if (!config.HUBSPOT_CLIENT_ID || !config.HUBSPOT_CLIENT_SECRET) {
+    return res.status(501).json({ error: 'HubSpot integration not configured' });
+  }
+  
+  // Include user ID in state for callback
+  const state = Buffer.from(JSON.stringify({ userId: req.user!.id })).toString('base64');
+  const authUrl = getHubSpotAuthUrl(state);
+  res.redirect(authUrl);
+});
+
+// HubSpot OAuth callback
+router.get('/hubspot/callback', async (req: Request, res: Response) => {
+  const { code, error, state } = req.query;
+
+  if (error) {
+    console.error('HubSpot OAuth error:', error);
+    return res.redirect(`${config.FRONTEND_URL}/dashboard?error=hubspot_denied`);
+  }
+
+  if (!code || typeof code !== 'string') {
+    return res.redirect(`${config.FRONTEND_URL}/dashboard?error=no_code`);
+  }
+
+  // Extract user ID from state
+  let userId: string | null = null;
+  if (state && typeof state === 'string') {
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+      userId = decoded.userId;
+    } catch {
+      console.error('Failed to decode HubSpot state');
+    }
+  }
+
+  if (!userId) {
+    return res.redirect(`${config.FRONTEND_URL}/dashboard?error=invalid_state`);
+  }
+
+  try {
+    // Exchange code for tokens
+    const tokens = await getHubSpotTokens(code);
+
+    // Store HubSpot tokens
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        hubspotAccessToken: tokens.accessToken,
+        hubspotRefreshToken: tokens.refreshToken,
+        hubspotTokenExpiry: new Date(Date.now() + tokens.expiresIn * 1000),
+      },
+    });
+
+    console.log('HubSpot connected for user:', userId);
+    res.redirect(`${config.FRONTEND_URL}/dashboard?hubspot=connected`);
+  } catch (error) {
+    console.error('HubSpot OAuth callback error:', error);
+    res.redirect(`${config.FRONTEND_URL}/dashboard?error=hubspot_failed`);
+  }
+});
+
+// Disconnect HubSpot
+router.post('/hubspot/disconnect', requireAuth, async (req: Request, res: Response) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: {
+        hubspotAccessToken: null,
+        hubspotRefreshToken: null,
+        hubspotTokenExpiry: null,
+      },
+    });
+
+    res.json({ success: true, message: 'HubSpot disconnected' });
+  } catch (error) {
+    console.error('HubSpot disconnect error:', error);
+    res.status(500).json({ error: 'Failed to disconnect HubSpot' });
   }
 });
 

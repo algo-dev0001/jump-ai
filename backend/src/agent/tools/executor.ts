@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { ToolArgs } from './definitions';
 import * as gmail from '../../services/gmail';
 import * as calendar from '../../services/calendar';
+import * as hubspot from '../../services/hubspot';
 
 const prisma = new PrismaClient();
 
@@ -283,31 +284,61 @@ const toolImplementations = {
     }
   },
 
-  // HubSpot CRM tools - MOCKED (will implement with HubSpot API later)
+  // HubSpot CRM tools - REAL IMPLEMENTATIONS
   async find_hubspot_contact(
     args: ToolArgs['find_hubspot_contact'],
     ctx: ToolContext
   ): Promise<ToolResult> {
     console.log(`[TOOL] find_hubspot_contact called for user ${ctx.userId}:`, args);
-    // TODO: Implement with HubSpot API
-    return {
-      success: true,
-      data: {
-        contacts: [
-          {
-            id: 'contact-1',
-            email: 'john.smith@example.com',
-            firstName: 'John',
-            lastName: 'Smith',
-            company: 'Acme Corp',
-            phone: '+1-555-123-4567',
-            lastActivity: new Date(Date.now() - 172800000).toISOString(),
+    
+    try {
+      // Check if HubSpot is connected
+      const isConnected = await hubspot.isHubSpotConnected(ctx.userId);
+      if (!isConnected) {
+        return {
+          success: false,
+          error: 'HubSpot is not connected. Please connect your HubSpot account first.',
+        };
+      }
+
+      const contacts = await hubspot.searchContacts(ctx.userId, args.query, 10);
+
+      if (contacts.length === 0) {
+        return {
+          success: true,
+          data: {
+            contacts: [],
+            total: 0,
+            message: `No contacts found matching "${args.query}"`,
           },
-        ],
-        total: 1,
-        message: `Found 1 contact matching "${args.query}"`,
-      },
-    };
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          contacts: contacts.map((c) => ({
+            id: c.id,
+            email: c.email,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            fullName: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+            phone: c.phone,
+            company: c.company,
+            jobTitle: c.jobTitle,
+            createdAt: c.createdAt.toISOString(),
+          })),
+          total: contacts.length,
+          message: `Found ${contacts.length} contact(s) matching "${args.query}"`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] find_hubspot_contact error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to search contacts',
+      };
+    }
   },
 
   async create_hubspot_contact(
@@ -315,17 +346,59 @@ const toolImplementations = {
     ctx: ToolContext
   ): Promise<ToolResult> {
     console.log(`[TOOL] create_hubspot_contact called for user ${ctx.userId}:`, args);
-    // TODO: Implement with HubSpot API
-    return {
-      success: true,
-      data: {
-        contactId: `contact-${Date.now()}`,
+    
+    try {
+      // Check if HubSpot is connected
+      const isConnected = await hubspot.isHubSpotConnected(ctx.userId);
+      if (!isConnected) {
+        return {
+          success: false,
+          error: 'HubSpot is not connected. Please connect your HubSpot account first.',
+        };
+      }
+
+      // Check if contact already exists
+      const existing = await hubspot.getContactByEmail(ctx.userId, args.email);
+      if (existing) {
+        return {
+          success: false,
+          error: `A contact with email ${args.email} already exists (ID: ${existing.id})`,
+        };
+      }
+
+      const contact = await hubspot.createContact(ctx.userId, {
         email: args.email,
         firstName: args.firstName,
         lastName: args.lastName,
-        message: `Contact ${args.firstName} ${args.lastName} (${args.email}) created in HubSpot`,
-      },
-    };
+        phone: args.phone,
+        company: args.company,
+      });
+
+      if (!contact) {
+        return {
+          success: false,
+          error: 'Failed to create contact in HubSpot',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          contactId: contact.id,
+          email: contact.email,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          fullName: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+          message: `Contact ${args.firstName} ${args.lastName} (${args.email}) created in HubSpot`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] create_hubspot_contact error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create contact',
+      };
+    }
   },
 
   async create_hubspot_note(
@@ -333,16 +406,54 @@ const toolImplementations = {
     ctx: ToolContext
   ): Promise<ToolResult> {
     console.log(`[TOOL] create_hubspot_note called for user ${ctx.userId}:`, args);
-    // TODO: Implement with HubSpot API
-    return {
-      success: true,
-      data: {
-        noteId: `note-${Date.now()}`,
-        contactEmail: args.contactEmail,
-        preview: args.content.substring(0, 100),
-        message: `Note added to contact ${args.contactEmail}`,
-      },
-    };
+    
+    try {
+      // Check if HubSpot is connected
+      const isConnected = await hubspot.isHubSpotConnected(ctx.userId);
+      if (!isConnected) {
+        return {
+          success: false,
+          error: 'HubSpot is not connected. Please connect your HubSpot account first.',
+        };
+      }
+
+      // Find the contact by email
+      const contact = await hubspot.getContactByEmail(ctx.userId, args.contactEmail);
+      if (!contact) {
+        return {
+          success: false,
+          error: `No contact found with email ${args.contactEmail}`,
+        };
+      }
+
+      // Create the note
+      const note = await hubspot.createContactNote(ctx.userId, contact.id, args.content);
+
+      if (!note) {
+        return {
+          success: false,
+          error: 'Failed to create note in HubSpot',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          noteId: note.id,
+          contactId: contact.id,
+          contactEmail: args.contactEmail,
+          contactName: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+          preview: args.content.substring(0, 100) + (args.content.length > 100 ? '...' : ''),
+          message: `Note added to ${contact.firstName || contact.email}'s contact record`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] create_hubspot_note error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create note',
+      };
+    }
   },
 
   // RAG search - searches email cache for now
