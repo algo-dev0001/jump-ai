@@ -60,4 +60,38 @@ export const api = {
       method: 'POST',
       token,
     }),
+
+  // Chat
+  getChatHistory: (token: string) =>
+    apiRequest<{
+      messages: Array<{
+        id: string;
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+        createdAt: string;
+      }>;
+    }>('/chat/history', { token }),
+
+  clearChatHistory: (token: string) =>
+    apiRequest<{ success: boolean }>('/chat/history', {
+      method: 'DELETE',
+      token,
+    }),
+
+  sendMessage: (token: string, message: string) =>
+    apiRequest<{
+      message: {
+        id: string;
+        role: 'assistant';
+        content: string;
+        createdAt: string;
+      };
+    }>('/chat', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ message, stream: false }),
+    }),
+
+  // Streaming chat - returns EventSource URL
+  getStreamUrl: () => `${API_URL}/chat`,
 };

@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { config } from './config';
 import authRoutes from './routes/auth';
+import chatRoutes from './routes/chat';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.get('/api', (req, res) => {
     version: '1.0.0',
     endpoints: {
       auth: '/auth/*',
+      chat: '/chat/*',
       health: '/health',
     }
   });
@@ -39,6 +41,7 @@ app.get('/api', (req, res) => {
 
 // Routes
 app.use('/auth', authRoutes);
+app.use('/chat', chatRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {

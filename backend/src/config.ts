@@ -9,7 +9,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string(),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   
-  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string(),
   
   GOOGLE_CLIENT_ID: z.string(),
   GOOGLE_CLIENT_SECRET: z.string(),
@@ -27,7 +27,7 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error('❌ Invalid environment variables:', parsed.error.flatten().fieldErrors);
-  console.error('Required: DATABASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET');
+  console.error('Required: DATABASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OPENAI_API_KEY');
   throw new Error('Invalid environment variables');
 }
 

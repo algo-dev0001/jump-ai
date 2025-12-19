@@ -46,6 +46,7 @@ export default function Home() {
           <div className="text-sm text-gray-500">
             <p>Milestone 0: Repo & Base Setup ✓</p>
             <p>Milestone 1: Google OAuth ✓</p>
+            <p>Milestone 2: Chat Interface ✓</p>
           </div>
         </div>
       </div>

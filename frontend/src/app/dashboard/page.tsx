@@ -126,7 +126,10 @@ export default function DashboardPage() {
 
         {/* Feature Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-lg shadow">
+          <a
+            href="/chat"
+            className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow block"
+          >
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
               <svg
                 className="w-6 h-6 text-blue-600"
@@ -146,8 +149,8 @@ export default function DashboardPage() {
             <p className="text-gray-600 text-sm">
               Talk to your AI assistant about clients, emails, and tasks.
             </p>
-            <p className="text-xs text-gray-400 mt-3">Coming in Milestone 2</p>
-          </div>
+            <p className="text-xs text-blue-600 mt-3 font-medium">Open Chat →</p>
+          </a>
 
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
