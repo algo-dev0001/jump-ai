@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { ToolArgs } from './definitions';
 import * as gmail from '../../services/gmail';
+import * as calendar from '../../services/calendar';
 
 const prisma = new PrismaClient();
 
@@ -132,37 +133,108 @@ const toolImplementations = {
     }
   },
 
-  // Calendar tools - MOCKED (will implement with Google Calendar later)
+  // Calendar tools - REAL IMPLEMENTATIONS
+  async list_calendar_events(
+    args: ToolArgs['list_calendar_events'],
+    ctx: ToolContext
+  ): Promise<ToolResult> {
+    console.log(`[TOOL] list_calendar_events called for user ${ctx.userId}:`, args);
+    
+    try {
+      const startDate = new Date(args.startDate);
+      const endDate = new Date(args.endDate);
+      
+      const events = await calendar.listEvents(ctx.userId, {
+        startDate,
+        endDate,
+        maxResults: args.maxResults || 10,
+      });
+
+      if (events.length === 0) {
+        return {
+          success: true,
+          data: {
+            events: [],
+            message: `No events found between ${startDate.toLocaleDateString()} and ${endDate.toLocaleDateString()}`,
+          },
+        };
+      }
+
+      const formattedEvents = events.map((event) => ({
+        id: event.id,
+        title: event.title,
+        start: event.start.toISOString(),
+        end: event.end.toISOString(),
+        formatted: `${event.start.toLocaleDateString()} ${event.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${event.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${event.title}`,
+        location: event.location,
+        attendees: event.attendees.map((a) => a.email),
+        meetLink: event.meetLink,
+        isAllDay: event.isAllDay,
+      }));
+
+      return {
+        success: true,
+        data: {
+          events: formattedEvents,
+          total: events.length,
+          message: `Found ${events.length} event(s) between ${startDate.toLocaleDateString()} and ${endDate.toLocaleDateString()}`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] list_calendar_events error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list calendar events',
+      };
+    }
+  },
+
   async find_calendar_availability(
     args: ToolArgs['find_calendar_availability'],
     ctx: ToolContext
   ): Promise<ToolResult> {
     console.log(`[TOOL] find_calendar_availability called for user ${ctx.userId}:`, args);
-    // TODO: Implement with Google Calendar API
-    const startDate = new Date(args.startDate);
-    const slots = [];
     
-    for (let i = 0; i < 3; i++) {
-      const slotDate = new Date(startDate);
-      slotDate.setDate(slotDate.getDate() + i);
-      slotDate.setHours(10 + i, 0, 0, 0);
+    try {
+      const startDate = new Date(args.startDate);
+      const endDate = new Date(args.endDate);
       
-      const endSlot = new Date(slotDate);
-      endSlot.setMinutes(endSlot.getMinutes() + args.durationMinutes);
-      
-      slots.push({
-        start: slotDate.toISOString(),
-        end: endSlot.toISOString(),
+      const slots = await calendar.findAvailability(ctx.userId, {
+        startDate,
+        endDate,
+        durationMinutes: args.durationMinutes,
       });
+
+      if (slots.length === 0) {
+        return {
+          success: true,
+          data: {
+            availableSlots: [],
+            message: `No available ${args.durationMinutes}-minute slots found between ${startDate.toLocaleDateString()} and ${endDate.toLocaleDateString()}`,
+          },
+        };
+      }
+
+      const formattedSlots = slots.map((slot) => ({
+        start: slot.start.toISOString(),
+        end: slot.end.toISOString(),
+        formatted: `${slot.start.toLocaleDateString()} ${slot.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${slot.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      }));
+
+      return {
+        success: true,
+        data: {
+          availableSlots: formattedSlots,
+          message: `Found ${slots.length} available ${args.durationMinutes}-minute slot(s)`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] find_calendar_availability error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to find availability',
+      };
     }
-    
-    return {
-      success: true,
-      data: {
-        availableSlots: slots,
-        message: `Found ${slots.length} available slots for ${args.durationMinutes} minute meetings`,
-      },
-    };
   },
 
   async create_calendar_event(
@@ -170,19 +242,45 @@ const toolImplementations = {
     ctx: ToolContext
   ): Promise<ToolResult> {
     console.log(`[TOOL] create_calendar_event called for user ${ctx.userId}:`, args);
-    // TODO: Implement with Google Calendar API
-    return {
-      success: true,
-      data: {
-        eventId: `event-${Date.now()}`,
+    
+    try {
+      const event = await calendar.createEvent(ctx.userId, {
         title: args.title,
         startTime: args.startTime,
         endTime: args.endTime,
-        attendees: args.attendees || [],
-        link: 'https://calendar.google.com/event/mock',
-        message: `Calendar event "${args.title}" created for ${new Date(args.startTime).toLocaleString()}`,
-      },
-    };
+        description: args.description,
+        location: args.location,
+        attendees: args.attendees,
+        sendNotifications: true,
+      });
+
+      if (!event) {
+        return {
+          success: false,
+          error: 'Failed to create calendar event. User may need to reconnect Google account.',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          eventId: event.id,
+          title: event.title,
+          startTime: event.start.toISOString(),
+          endTime: event.end.toISOString(),
+          attendees: event.attendees.map((a) => a.email),
+          meetLink: event.meetLink,
+          calendarLink: event.htmlLink,
+          message: `Calendar event "${event.title}" created for ${event.start.toLocaleString()}${event.meetLink ? ` with Google Meet link` : ''}`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] create_calendar_event error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create calendar event',
+      };
+    }
   },
 
   // HubSpot CRM tools - MOCKED (will implement with HubSpot API later)

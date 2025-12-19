@@ -59,6 +59,31 @@ export const toolDefinitions: ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'list_calendar_events',
+      description: 'List calendar events within a date range. Use this to see upcoming meetings and appointments.',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: {
+            type: 'string',
+            description: 'Start date for the range (ISO 8601 format)',
+          },
+          endDate: {
+            type: 'string',
+            description: 'End date for the range (ISO 8601 format)',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'Maximum number of events to return (default: 10)',
+          },
+        },
+        required: ['startDate', 'endDate'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'find_calendar_availability',
       description: 'Find available time slots in the calendar. Use this when scheduling meetings.',
       parameters: {
@@ -300,6 +325,11 @@ export interface ToolArgs {
   };
   read_emails: {
     query?: string;
+    maxResults?: number;
+  };
+  list_calendar_events: {
+    startDate: string;
+    endDate: string;
     maxResults?: number;
   };
   find_calendar_availability: {

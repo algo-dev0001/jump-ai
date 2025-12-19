@@ -11,7 +11,8 @@ interface ToolCallDisplayProps {
 const toolLabels: Record<string, { label: string; icon: string }> = {
   send_email: { label: 'Sending email', icon: '✉️' },
   read_emails: { label: 'Reading emails', icon: '📬' },
-  find_calendar_availability: { label: 'Checking calendar', icon: '📅' },
+  list_calendar_events: { label: 'Checking calendar', icon: '📅' },
+  find_calendar_availability: { label: 'Finding availability', icon: '🕐' },
   create_calendar_event: { label: 'Creating event', icon: '📆' },
   find_hubspot_contact: { label: 'Searching contacts', icon: '👤' },
   create_hubspot_contact: { label: 'Creating contact', icon: '➕' },
