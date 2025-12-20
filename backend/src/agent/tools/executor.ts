@@ -3,6 +3,7 @@ import { ToolArgs } from './definitions';
 import * as gmail from '../../services/gmail';
 import * as calendar from '../../services/calendar';
 import * as hubspot from '../../services/hubspot';
+import * as rag from '../../services/rag';
 
 const prisma = new PrismaClient();
 
@@ -456,43 +457,101 @@ const toolImplementations = {
     }
   },
 
-  // RAG search - searches email cache for now
+  // RAG search - vector similarity search
   async search_rag(args: ToolArgs['search_rag'], ctx: ToolContext): Promise<ToolResult> {
     console.log(`[TOOL] search_rag called for user ${ctx.userId}:`, args);
     
     try {
-      // Search email cache
-      const emails = await prisma.emailCache.findMany({
-        where: {
-          userId: ctx.userId,
-          OR: [
-            { from: { contains: args.query, mode: 'insensitive' } },
-            { subject: { contains: args.query, mode: 'insensitive' } },
-            { body: { contains: args.query, mode: 'insensitive' } },
-            { snippet: { contains: args.query, mode: 'insensitive' } },
-          ],
-        },
-        orderBy: { date: 'desc' },
-        take: args.limit || 5,
+      // Determine sources to search
+      let sources: rag.EmbeddingSource[] | undefined;
+      if (args.sources && args.sources.length > 0 && !args.sources.includes('all')) {
+        sources = args.sources.filter((s): s is rag.EmbeddingSource => s !== 'all');
+      }
+
+      // Perform vector search
+      const results = await rag.searchRAG(ctx.userId, args.query, {
+        sources,
+        limit: args.limit || 5,
+        minScore: 0.3,
       });
 
-      const results = emails.map((e) => ({
-        source: 'gmail',
-        content: `Email from ${e.fromName || e.from}: "${e.subject}" - ${e.snippet}`,
-        metadata: {
-          emailId: e.id,
-          from: e.from,
-          fromName: e.fromName,
-          subject: e.subject,
-          date: e.date.toISOString(),
-        },
-        score: 1.0, // TODO: Add real scoring with embeddings
-      }));
+      if (results.length === 0) {
+        // Fallback to basic text search in email cache
+        const emails = await prisma.emailCache.findMany({
+          where: {
+            userId: ctx.userId,
+            OR: [
+              { from: { contains: args.query, mode: 'insensitive' } },
+              { subject: { contains: args.query, mode: 'insensitive' } },
+              { body: { contains: args.query, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { date: 'desc' },
+          take: args.limit || 5,
+        });
+
+        if (emails.length > 0) {
+          return {
+            success: true,
+            data: {
+              results: emails.map((e) => ({
+                source: 'gmail',
+                content: `Email from ${e.fromName || e.from}: "${e.subject}" - ${e.snippet}`,
+                metadata: {
+                  emailId: e.id,
+                  from: e.from,
+                  fromName: e.fromName,
+                  subject: e.subject,
+                  date: e.date.toISOString(),
+                },
+                score: 0.5,
+              })),
+              searchType: 'text_fallback',
+              message: `Found ${emails.length} result(s) via text search for "${args.query}"`,
+            },
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            results: [],
+            message: `No results found for "${args.query}". Try indexing more emails or contacts.`,
+          },
+        };
+      }
+
+      // Format results
+      const formattedResults = results.map((r) => {
+        const meta = r.metadata as Record<string, unknown>;
+        return {
+          source: r.source,
+          content: r.content.length > 500 ? r.content.substring(0, 500) + '...' : r.content,
+          metadata: {
+            ...(r.source === 'gmail' && {
+              emailId: meta.emailId,
+              from: meta.from,
+              fromName: meta.fromName,
+              subject: meta.subject,
+              date: meta.date,
+            }),
+            ...(r.source === 'hubspot' && {
+              contactId: meta.contactId,
+              email: meta.email,
+              firstName: meta.firstName,
+              lastName: meta.lastName,
+              company: meta.company,
+            }),
+          },
+          score: Math.round(r.score * 100) / 100,
+        };
+      });
 
       return {
         success: true,
         data: {
-          results,
+          results: formattedResults,
+          searchType: 'vector',
           message: `Found ${results.length} relevant result(s) for "${args.query}"`,
         },
       };

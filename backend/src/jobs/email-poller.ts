@@ -1,13 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 import { listEmails, getHistoryId, getNewEmailsSince, NormalizedEmail } from '../services/gmail';
+import { ingestEmail } from '../services/rag';
 
 const prisma = new PrismaClient();
 
 // Polling interval in milliseconds (90 seconds)
 const POLL_INTERVAL = 90 * 1000;
 
-// Store new email in cache
-async function cacheEmail(userId: string, email: NormalizedEmail): Promise<void> {
+// Store new email in cache and ingest for RAG
+async function cacheEmail(userId: string, email: NormalizedEmail, shouldIngest: boolean = true): Promise<void> {
   await prisma.emailCache.upsert({
     where: { id: email.id },
     update: {
@@ -31,6 +32,13 @@ async function cacheEmail(userId: string, email: NormalizedEmail): Promise<void>
       labels: email.labels,
     },
   });
+
+  // Ingest into RAG system (async, don't block)
+  if (shouldIngest) {
+    ingestEmail(userId, email).catch((err) => {
+      console.error(`[EmailPoller] Failed to ingest email ${email.id}:`, err);
+    });
+  }
 }
 
 // Poll emails for a single user

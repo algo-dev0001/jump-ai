@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { config } from './config';
 import authRoutes from './routes/auth';
 import chatRoutes from './routes/chat';
+import ragRoutes from './routes/rag';
 import { startEmailPoller, stopEmailPoller } from './jobs';
 
 dotenv.config();
@@ -43,6 +44,7 @@ app.get('/api', (req, res) => {
 // Routes
 app.use('/auth', authRoutes);
 app.use('/chat', chatRoutes);
+app.use('/rag', ragRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
