@@ -325,6 +325,64 @@ Use type="meeting_scheduling" with data containing: contactEmail, contactName, p
   },
 ];
 
+// Instruction management tools
+  {
+    type: 'function',
+    function: {
+      name: 'add_instruction',
+      description: 'Add a new ongoing instruction that the agent will follow. Instructions are evaluated whenever events occur (new emails, calendar events, etc.). Examples: "Always reply to emails from @vip.com within 1 hour", "Notify me when a client mentions retirement"',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: {
+            type: 'string',
+            description: 'The instruction text to follow. Be specific about conditions and actions.',
+          },
+        },
+        required: ['instruction'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_instructions',
+      description: 'List all active ongoing instructions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          includeInactive: {
+            type: 'boolean',
+            description: 'Include deactivated instructions (default: false)',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_instruction',
+      description: 'Remove or deactivate an ongoing instruction.',
+      parameters: {
+        type: 'object',
+        properties: {
+          instructionId: {
+            type: 'string',
+            description: 'ID of the instruction to remove',
+          },
+          permanent: {
+            type: 'boolean',
+            description: 'If true, permanently delete. If false, just deactivate (default: false)',
+          },
+        },
+        required: ['instructionId'],
+      },
+    },
+  },
+];
+
 // Get tool names for easy reference
 export const toolNames = toolDefinitions.map((t) => t.function.name);
 
@@ -388,6 +446,16 @@ export interface ToolArgs {
     status?: 'pending' | 'in_progress' | 'completed' | 'failed';
     data?: Record<string, unknown>;
     notes?: string;
+  };
+  add_instruction: {
+    instruction: string;
+  };
+  list_instructions: {
+    includeInactive?: boolean;
+  };
+  remove_instruction: {
+    instructionId: string;
+    permanent?: boolean;
   };
 }
 

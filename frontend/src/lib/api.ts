@@ -94,4 +94,67 @@ export const api = {
 
   // Streaming chat - returns EventSource URL
   getStreamUrl: () => `${API_URL}/chat`,
+
+  // Instructions
+  getInstructions: (token: string, includeInactive = false) =>
+    apiRequest<{
+      success: boolean;
+      instructions: Array<{
+        id: string;
+        content: string;
+        active: boolean;
+        createdAt: string;
+      }>;
+      total: number;
+    }>(`/instructions${includeInactive ? '?all=true' : ''}`, { token }),
+
+  addInstruction: (token: string, content: string) =>
+    apiRequest<{
+      success: boolean;
+      instruction: {
+        id: string;
+        content: string;
+        active: boolean;
+        createdAt: string;
+      };
+    }>('/instructions', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ content }),
+    }),
+
+  deactivateInstruction: (token: string, id: string) =>
+    apiRequest<{
+      success: boolean;
+      instruction: {
+        id: string;
+        content: string;
+        active: boolean;
+      };
+    }>(`/instructions/${id}/deactivate`, {
+      method: 'PATCH',
+      token,
+    }),
+
+  reactivateInstruction: (token: string, id: string) =>
+    apiRequest<{
+      success: boolean;
+      instruction: {
+        id: string;
+        content: string;
+        active: boolean;
+      };
+    }>(`/instructions/${id}/reactivate`, {
+      method: 'PATCH',
+      token,
+    }),
+
+  deleteInstruction: (token: string, id: string) =>
+    apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/instructions/${id}`, {
+      method: 'DELETE',
+      token,
+    }),
 };

@@ -7,6 +7,7 @@ import { config } from './config';
 import authRoutes from './routes/auth';
 import chatRoutes from './routes/chat';
 import ragRoutes from './routes/rag';
+import instructionsRoutes from './routes/instructions';
 import { startEmailPoller, stopEmailPoller } from './jobs';
 
 dotenv.config();
@@ -36,6 +37,7 @@ app.get('/api', (req, res) => {
     endpoints: {
       auth: '/auth/*',
       chat: '/chat/*',
+      instructions: '/instructions/*',
       health: '/health',
     }
   });
@@ -45,6 +47,7 @@ app.get('/api', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/chat', chatRoutes);
 app.use('/rag', ragRoutes);
+app.use('/instructions', instructionsRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -24,6 +24,7 @@ interface Connections {
 interface AuthContextType {
   user: User | null;
   connections: Connections | null;
+  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: () => void;
@@ -36,25 +37,29 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [connections, setConnections] = useState<Connections | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchUser = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
+      const storedToken = localStorage.getItem('token');
+      if (!storedToken) {
         setUser(null);
         setConnections(null);
+        setToken(null);
         return;
       }
 
-      const data = await api.getMe(token);
+      const data = await api.getMe(storedToken);
       setUser(data.user);
       setConnections(data.connections);
+      setToken(storedToken);
     } catch (error) {
       console.error('Failed to fetch user:', error);
       localStorage.removeItem('token');
       setUser(null);
       setConnections(null);
+      setToken(null);
     }
   };
 
@@ -79,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('token');
       setUser(null);
       setConnections(null);
+      setToken(null);
     }
   };
 
@@ -91,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         connections,
+        token,
         isLoading,
         isAuthenticated: !!user,
         login,

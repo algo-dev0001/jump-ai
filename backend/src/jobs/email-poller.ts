@@ -3,6 +3,7 @@ import { listEmails, getHistoryId, getNewEmailsSince, NormalizedEmail } from '..
 import { ingestEmail } from '../services/rag';
 import { findTaskWaitingForEmail } from '../services/tasks';
 import { resumeFromReply } from '../workflows';
+import { processEvent } from '../agent/proactive';
 
 const prisma = new PrismaClient();
 
@@ -138,6 +139,23 @@ async function pollUserEmails(userId: string): Promise<number> {
       
       // Check if this email resumes a waiting task
       await checkForTaskReply(userId, email);
+
+      // Evaluate against ongoing instructions (proactive agent)
+      try {
+        const result = await processEvent(userId, {
+          type: 'new_email',
+          data: email,
+        });
+        
+        if (result.shouldAct) {
+          console.log(`[EmailPoller] Proactive action for email from ${email.from}: ${result.reasoning}`);
+          if (result.executed) {
+            console.log(`[EmailPoller] Action executed: ${result.executionResult?.substring(0, 100)}...`);
+          }
+        }
+      } catch (proactiveError) {
+        console.error('[EmailPoller] Proactive evaluation error:', proactiveError);
+      }
     }
 
     if (newEmails.length > 0) {

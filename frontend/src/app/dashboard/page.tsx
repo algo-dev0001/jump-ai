@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { InstructionsPanel } from '@/components/instructions';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, connections, isLoading, isAuthenticated, logout } = useAuth();
+  const { user, connections, isLoading, isAuthenticated, logout, token } = useAuth();
+  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -186,7 +188,10 @@ export default function DashboardPage() {
             <p className="text-xs text-gray-400 mt-3">Coming in Milestone 3</p>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow">
+          <button
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow text-left w-full"
+          >
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
               <svg
                 className="w-6 h-6 text-green-600"
@@ -206,9 +211,18 @@ export default function DashboardPage() {
             <p className="text-gray-600 text-sm">
               Set ongoing rules for how your AI assistant should behave.
             </p>
-            <p className="text-xs text-gray-400 mt-3">Coming in Milestone 5</p>
-          </div>
+            <p className="text-xs text-green-600 mt-3 font-medium">
+              {showInstructions ? 'Hide Panel ↑' : 'Manage Instructions →'}
+            </p>
+          </button>
         </div>
+
+        {/* Instructions Panel */}
+        {showInstructions && token && (
+          <div className="mt-8">
+            <InstructionsPanel token={token} />
+          </div>
+        )}
       </div>
     </main>
   );

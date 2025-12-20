@@ -5,6 +5,7 @@ import * as calendar from '../../services/calendar';
 import * as hubspot from '../../services/hubspot';
 import * as rag from '../../services/rag';
 import * as tasks from '../../services/tasks';
+import * as instructions from '../../services/instructions';
 import { startMeetingScheduling, getMeetingSchedulingStatus } from '../../workflows';
 
 const prisma = new PrismaClient();
@@ -702,6 +703,98 @@ const toolImplementations = {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to update task',
+      };
+    }
+  },
+
+  // Instruction management tools
+  async add_instruction(args: ToolArgs['add_instruction'], ctx: ToolContext): Promise<ToolResult> {
+    console.log(`[TOOL] add_instruction called for user ${ctx.userId}:`, args);
+    
+    try {
+      const instruction = await instructions.addInstruction(ctx.userId, args.instruction);
+
+      return {
+        success: true,
+        data: {
+          instructionId: instruction.id,
+          content: instruction.content,
+          active: instruction.active,
+          message: `Instruction added: "${args.instruction.substring(0, 50)}${args.instruction.length > 50 ? '...' : ''}"`,
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] add_instruction error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add instruction',
+      };
+    }
+  },
+
+  async list_instructions(args: ToolArgs['list_instructions'], ctx: ToolContext): Promise<ToolResult> {
+    console.log(`[TOOL] list_instructions called for user ${ctx.userId}:`, args);
+    
+    try {
+      const instructionList = args.includeInactive
+        ? await instructions.getAllInstructions(ctx.userId)
+        : await instructions.getActiveInstructions(ctx.userId);
+
+      return {
+        success: true,
+        data: {
+          instructions: instructionList.map((inst) => ({
+            id: inst.id,
+            content: inst.content,
+            active: inst.active,
+            createdAt: inst.createdAt.toISOString(),
+          })),
+          total: instructionList.length,
+          message: instructionList.length > 0
+            ? `Found ${instructionList.length} instruction(s)`
+            : 'No instructions found',
+        },
+      };
+    } catch (error) {
+      console.error('[TOOL] list_instructions error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list instructions',
+      };
+    }
+  },
+
+  async remove_instruction(args: ToolArgs['remove_instruction'], ctx: ToolContext): Promise<ToolResult> {
+    console.log(`[TOOL] remove_instruction called for user ${ctx.userId}:`, args);
+    
+    try {
+      if (args.permanent) {
+        await instructions.deleteInstruction(args.instructionId);
+        return {
+          success: true,
+          data: {
+            instructionId: args.instructionId,
+            action: 'deleted',
+            message: 'Instruction permanently deleted',
+          },
+        };
+      } else {
+        const instruction = await instructions.deactivateInstruction(args.instructionId);
+        return {
+          success: true,
+          data: {
+            instructionId: instruction.id,
+            action: 'deactivated',
+            content: instruction.content,
+            message: 'Instruction deactivated (can be reactivated later)',
+          },
+        };
+      }
+    } catch (error) {
+      console.error('[TOOL] remove_instruction error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to remove instruction',
       };
     }
   },

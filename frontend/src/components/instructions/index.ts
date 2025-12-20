@@ -1,0 +1,2 @@
+export { InstructionsPanel } from './InstructionsPanel';
+
