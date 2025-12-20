@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { listEmails, getHistoryId, getNewEmailsSince, NormalizedEmail } from '../services/gmail';
 import { ingestEmail } from '../services/rag';
+import { findTaskWaitingForEmail } from '../services/tasks';
+import { resumeFromReply } from '../workflows';
 
 const prisma = new PrismaClient();
 
@@ -38,6 +40,25 @@ async function cacheEmail(userId: string, email: NormalizedEmail, shouldIngest: 
     ingestEmail(userId, email).catch((err) => {
       console.error(`[EmailPoller] Failed to ingest email ${email.id}:`, err);
     });
+  }
+}
+
+// Check if email is a reply that resumes a waiting task
+async function checkForTaskReply(userId: string, email: NormalizedEmail): Promise<void> {
+  try {
+    // Find task waiting for reply from this sender
+    const task = await findTaskWaitingForEmail(userId, email.from, email.threadId);
+    
+    if (task) {
+      console.log(`[EmailPoller] Found waiting task ${task.id} for reply from ${email.from}`);
+      
+      // Resume the workflow
+      const result = await resumeFromReply(userId, task.id, email);
+      
+      console.log(`[EmailPoller] Workflow resumed: ${result.message}`);
+    }
+  } catch (error) {
+    console.error('[EmailPoller] Error checking for task reply:', error);
   }
 }
 
@@ -111,9 +132,12 @@ async function pollUserEmails(userId: string): Promise<number> {
       }
     }
 
-    // Cache any new emails
+    // Cache any new emails and check for task replies
     for (const email of newEmails) {
       await cacheEmail(userId, email);
+      
+      // Check if this email resumes a waiting task
+      await checkForTaskReply(userId, email);
     }
 
     if (newEmails.length > 0) {

@@ -254,14 +254,21 @@ export const toolDefinitions: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'store_task',
-      description: 'Create a new task that may require follow-up or async processing. Use this for tasks that cannot be completed immediately (e.g., waiting for email reply).',
+      description: `Create a task for async workflows. For meeting_scheduling type, this starts an automated workflow:
+1. Sends meeting request email with available times
+2. Waits for reply (async - user will be notified when reply arrives)
+3. Creates calendar event when reply is received
+4. Adds note to CRM
+5. Sends confirmation email
+
+Use type="meeting_scheduling" with data containing: contactEmail, contactName, purpose, duration (minutes)`,
       parameters: {
         type: 'object',
         properties: {
           type: {
             type: 'string',
             enum: ['meeting_scheduling', 'email_followup', 'crm_update', 'reminder', 'other'],
-            description: 'Type of task',
+            description: 'Type of task. Use "meeting_scheduling" to start the full meeting scheduling workflow.',
           },
           description: {
             type: 'string',
@@ -269,11 +276,17 @@ export const toolDefinitions: ChatCompletionTool[] = [
           },
           data: {
             type: 'object',
-            description: 'Additional data needed to complete the task',
+            description: 'For meeting_scheduling: { contactEmail, contactName?, purpose, duration? (default 30) }',
+            properties: {
+              contactEmail: { type: 'string', description: 'Email of person to meet with' },
+              contactName: { type: 'string', description: 'Name of person to meet with' },
+              purpose: { type: 'string', description: 'Purpose/topic of the meeting' },
+              duration: { type: 'number', description: 'Duration in minutes (default: 30)' },
+            },
           },
           triggerCondition: {
             type: 'string',
-            description: 'Condition that should trigger task resumption (e.g., "email_reply_from:john@example.com")',
+            description: 'For non-workflow tasks: condition that triggers resumption',
           },
         },
         required: ['type', 'description'],

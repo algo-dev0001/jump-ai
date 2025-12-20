@@ -4,6 +4,8 @@ import * as gmail from '../../services/gmail';
 import * as calendar from '../../services/calendar';
 import * as hubspot from '../../services/hubspot';
 import * as rag from '../../services/rag';
+import * as tasks from '../../services/tasks';
+import { startMeetingScheduling, getMeetingSchedulingStatus } from '../../workflows';
 
 const prisma = new PrismaClient();
 
@@ -564,23 +566,55 @@ const toolImplementations = {
     }
   },
 
-  // Task management - REAL IMPLEMENTATIONS
+  // Task management - REAL IMPLEMENTATIONS with WORKFLOWS
   async store_task(args: ToolArgs['store_task'], ctx: ToolContext): Promise<ToolResult> {
     console.log(`[TOOL] store_task called for user ${ctx.userId}:`, args);
     
     try {
-      const task = await prisma.task.create({
-        data: {
-          userId: ctx.userId,
-          type: args.type,
-          status: 'pending',
-          description: args.description,
-          data: {
-            ...args.data,
-            triggerCondition: args.triggerCondition,
-          },
-        },
-      });
+      // Special handling for meeting scheduling workflow
+      if (args.type === 'meeting_scheduling' && args.data) {
+        const data = args.data as {
+          contactEmail?: string;
+          contactName?: string;
+          purpose?: string;
+          duration?: number;
+        };
+
+        if (data.contactEmail && data.purpose) {
+          // Start the meeting scheduling workflow
+          const result = await startMeetingScheduling({
+            userId: ctx.userId,
+            contactEmail: data.contactEmail,
+            contactName: data.contactName,
+            purpose: data.purpose,
+            durationMinutes: data.duration || 30,
+          });
+
+          return {
+            success: result.success,
+            data: {
+              taskId: result.taskId,
+              type: 'meeting_scheduling',
+              status: result.waitingForReply ? 'waiting_reply' : 'in_progress',
+              step: result.step,
+              message: result.message,
+              waitingForReply: result.waitingForReply,
+              ...result.data,
+            },
+          };
+        }
+      }
+
+      // Default task creation for other types
+      const task = await tasks.createTask(
+        ctx.userId,
+        args.type,
+        args.description,
+        {
+          ...args.data,
+          triggerCondition: args.triggerCondition,
+        }
+      );
 
       return {
         success: true,
@@ -605,13 +639,54 @@ const toolImplementations = {
     console.log(`[TOOL] update_task called for user ${ctx.userId}:`, args);
     
     try {
-      const task = await prisma.task.update({
-        where: { id: args.taskId },
-        data: {
-          ...(args.status && { status: args.status }),
-          ...(args.data && { data: args.data }),
-          ...(args.status === 'completed' && { completedAt: new Date() }),
-        },
+      // Get task to check type
+      const existingTask = await tasks.getTask(args.taskId);
+      if (!existingTask) {
+        return {
+          success: false,
+          error: `Task ${args.taskId} not found`,
+        };
+      }
+
+      // If it's a meeting scheduling task, get status
+      if (existingTask.type === 'meeting_scheduling') {
+        const status = await getMeetingSchedulingStatus(args.taskId);
+        if (status) {
+          // If cancelling
+          if (args.status === 'cancelled') {
+            await tasks.cancelTask(args.taskId);
+            return {
+              success: true,
+              data: {
+                taskId: args.taskId,
+                status: 'cancelled',
+                message: 'Meeting scheduling cancelled',
+              },
+            };
+          }
+
+          return {
+            success: true,
+            data: {
+              taskId: args.taskId,
+              status: status.status,
+              step: status.step,
+              waitingForReply: status.waitingForReply,
+              contact: status.contact,
+              meetingDetails: status.meetingDetails,
+              message: status.waitingForReply 
+                ? `Waiting for reply from ${status.contact.email}`
+                : `Current step: ${status.step}`,
+            },
+          };
+        }
+      }
+
+      // Default update
+      const task = await tasks.updateTask(args.taskId, {
+        status: args.status as tasks.TaskStatus,
+        context: args.data,
+        addMessage: args.notes ? { role: 'agent', content: args.notes } : undefined,
       });
 
       return {
