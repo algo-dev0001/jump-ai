@@ -3,9 +3,11 @@ import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
 import { runAgent, runAgentStream, AgentMessage } from '../agent';
 import { z } from 'zod';
+import { createLogger } from '../lib/logger';
 
 const router = Router();
 const prisma = new PrismaClient();
+const log = createLogger('Chat');
 
 // Request validation schema
 const chatRequestSchema = z.object({
@@ -92,6 +94,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       const toolCallsExecuted: Array<{ name: string; args: unknown; result: unknown }> = [];
 
       try {
+        log.info('Starting agent stream', { userId });
+        
         for await (const event of runAgentStream(agentMessages, toolContext)) {
           switch (event.type) {
             case 'thinking':
@@ -99,15 +103,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
               break;
               
             case 'tool_call':
+              log.debug('Tool call started', { userId, tool: (event.data as { name: string }).name });
               res.write(`data: ${JSON.stringify({ type: 'tool_call', ...event.data as object })}\n\n`);
               break;
               
             case 'tool_result':
-              const resultData = event.data as { name: string; result: { data?: unknown } };
+              const resultData = event.data as { name: string; result: { success?: boolean; data?: unknown; error?: string } };
               toolCallsExecuted.push({
                 name: resultData.name,
                 args: {},
                 result: resultData.result,
+              });
+              log.debug('Tool call completed', { 
+                userId, 
+                tool: resultData.name, 
+                success: resultData.result?.success,
               });
               res.write(`data: ${JSON.stringify({ type: 'tool_result', ...resultData })}\n\n`);
               break;
@@ -127,6 +137,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
                     content: fullResponse,
                   },
                 });
+                log.info('Response saved', { userId, toolCallCount: toolCallsExecuted.length });
               }
               res.write(`data: ${JSON.stringify({ type: 'done', toolCalls: toolCallsExecuted })}\n\n`);
               break;
@@ -135,8 +146,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         
         res.end();
       } catch (error) {
-        console.error('Stream error:', error);
-        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Stream error' })}\n\n`);
+        log.error('Stream error', error, { userId });
+        const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+        res.write(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`);
         res.end();
       }
     } else {
@@ -164,8 +176,12 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('Chat error:', error);
-    res.status(500).json({ error: 'Failed to process chat message' });
+    log.error('Chat error', error, { userId: req.user?.id });
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+    res.status(500).json({ 
+      error: 'Failed to process chat message',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+    });
   }
 });
 

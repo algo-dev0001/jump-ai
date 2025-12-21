@@ -7,8 +7,10 @@ import * as rag from '../../services/rag';
 import * as tasks from '../../services/tasks';
 import * as instructions from '../../services/instructions';
 import { startMeetingScheduling, getMeetingSchedulingStatus } from '../../workflows';
+import { loggers } from '../../lib/logger';
 
 const prisma = new PrismaClient();
+const log = loggers.tools;
 
 // Tool result type
 export interface ToolResult {
@@ -809,20 +811,42 @@ export async function executeTool(
   args: unknown,
   context: ToolContext
 ): Promise<ToolResult> {
+  const startTime = Date.now();
   const implementation = toolImplementations[toolName as ToolName];
   
   if (!implementation) {
+    log.warn(`Unknown tool requested: ${toolName}`, { userId: context.userId });
     return {
       success: false,
       error: `Unknown tool: ${toolName}`,
     };
   }
 
+  log.info(`Executing: ${toolName}`, { userId: context.userId, args: JSON.stringify(args).substring(0, 200) });
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return await implementation(args as any, context);
+    const result = await implementation(args as any, context);
+    const duration = Date.now() - startTime;
+    
+    if (result.success) {
+      log.info(`Completed: ${toolName} (${duration}ms)`, { 
+        userId: context.userId, 
+        duration,
+        preview: JSON.stringify(result.data).substring(0, 100),
+      });
+    } else {
+      log.warn(`Failed: ${toolName} (${duration}ms)`, { 
+        userId: context.userId, 
+        duration,
+        error: result.error,
+      });
+    }
+    
+    return result;
   } catch (error) {
-    console.error(`[TOOL] Error executing ${toolName}:`, error);
+    const duration = Date.now() - startTime;
+    log.error(`Error executing ${toolName}`, error, { userId: context.userId, duration });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Tool execution failed',

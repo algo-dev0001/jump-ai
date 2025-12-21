@@ -16,6 +16,12 @@ interface Message {
 interface ActiveToolCall {
   name: string;
   status: 'calling' | 'complete' | 'error';
+  args?: Record<string, unknown>;
+  result?: {
+    success?: boolean;
+    data?: unknown;
+    error?: string;
+  };
 }
 
 export default function ChatPage() {
@@ -124,7 +130,7 @@ export default function ChatPage() {
                     // Tool is being called
                     setActiveToolCalls((prev) => [
                       ...prev,
-                      { name: data.name, status: 'calling' },
+                      { name: data.name, status: 'calling', args: data.args },
                     ]);
                     break;
                     
@@ -133,7 +139,11 @@ export default function ChatPage() {
                     setActiveToolCalls((prev) =>
                       prev.map((tc) =>
                         tc.name === data.name
-                          ? { ...tc, status: data.result?.success ? 'complete' : 'error' }
+                          ? { 
+                              ...tc, 
+                              status: data.result?.success ? 'complete' : 'error',
+                              result: data.result,
+                            }
                           : tc
                       )
                     );
@@ -286,6 +296,8 @@ export default function ChatPage() {
                       key={`${tc.name}-${idx}`}
                       name={tc.name}
                       status={tc.status}
+                      args={tc.args}
+                      result={tc.result}
                     />
                   ))}
                 </div>
